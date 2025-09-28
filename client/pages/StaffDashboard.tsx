@@ -43,6 +43,36 @@ import { useNavigate } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
+// Add CSS styles for PDF generation
+const addPDFStyles = () => {
+  const style = document.createElement('style');
+  style.textContent = `
+    .pdf-content .no-print {
+      display: none !important;
+    }
+    .pdf-content {
+      box-sizing: border-box;
+      width: 210mm;
+      margin: 0 auto;
+      padding: 0;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .pdf-content * {
+      box-sizing: border-box;
+    }
+    .page-break-inside-avoid {
+      page-break-inside: avoid;
+    }
+  `;
+  document.head.appendChild(style);
+  return style;
+};
+
+const removePDFStyles = (style: HTMLStyleElement) => {
+  document.head.removeChild(style);
+};
+
 export default function StaffDashboard() {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -3517,6 +3547,8 @@ function StudentReportForm({
   const handleDownloadReport = async () => {
     if (isDownloadingPDF) return; // Prevent double-clicks
     
+    let pdfStyle: HTMLStyleElement | null = null;
+    
     try {
       setIsDownloadingPDF(true);
       
@@ -3525,6 +3557,12 @@ function StudentReportForm({
         title: 'Generating PDF',
         description: 'Please wait while the report is being prepared...'
       });
+
+      // Add PDF-specific styles to hide action buttons
+      pdfStyle = addPDFStyles();
+      
+      // Wait a moment for styles to apply
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       // Use the React ref to target the specific report element
       const reportElement = reportRef.current;
@@ -3537,17 +3575,26 @@ function StudentReportForm({
         throw new Error('Student information not available');
       }
 
-      // Create canvas from the report element
+      // Create canvas from the report element with improved settings
       const canvas = await html2canvas(reportElement, {
-        scale: 2, // Higher quality
+        scale: 2.0, // Higher quality for better text rendering
         useCORS: true,
         allowTaint: true,
-        backgroundColor: '#ffffff'
+        backgroundColor: '#ffffff',
+        width: reportElement.scrollWidth,
+        height: reportElement.scrollHeight,
+        scrollX: 0,
+        scrollY: 0
       });
 
-      // Calculate PDF dimensions with proper A4 dimensions
-      const imgWidth = 210; // A4 width in mm
-      const pageHeight = 297; // Correct A4 height in mm
+      // Calculate PDF dimensions with proper A4 dimensions and margins
+      const pdfWidth = 210; // A4 width in mm
+      const pdfHeight = 297; // A4 height in mm
+      const margin = 15; // 15mm margins
+      const contentWidth = pdfWidth - (margin * 2);
+      const contentHeight = pdfHeight - (margin * 2);
+      
+      const imgWidth = contentWidth;
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
       let heightLeft = imgHeight;
 
@@ -3556,18 +3603,18 @@ function StudentReportForm({
       let position = 0;
 
       // Generate image data once for better performance
-      const imgData = canvas.toDataURL('image/png');
+      const imgData = canvas.toDataURL('image/png', 0.95);
 
-      // Add the image to PDF
-      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-      heightLeft -= pageHeight;
+      // Add the image to PDF with proper margins
+      pdf.addImage(imgData, 'PNG', margin, margin + position, imgWidth, imgHeight);
+      heightLeft -= contentHeight;
 
-      // Add additional pages if content is longer than one page (fixed condition)
+      // Add additional pages if content is longer than one page
       while (heightLeft > 0) {
         position = heightLeft - imgHeight;
         pdf.addPage();
-        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight);
-        heightLeft -= pageHeight;
+        pdf.addImage(imgData, 'PNG', margin, margin + position, imgWidth, imgHeight);
+        heightLeft -= contentHeight;
       }
 
       // Generate filename with proper sanitization
@@ -3591,13 +3638,21 @@ function StudentReportForm({
         description: 'There was an error generating the PDF. Please try again.'
       });
     } finally {
+      // Always remove PDF styles to restore original UI
+      if (pdfStyle) {
+        try {
+          removePDFStyles(pdfStyle);
+        } catch (styleError) {
+          console.warn('Failed to remove PDF styles:', styleError);
+        }
+      }
       setIsDownloadingPDF(false);
     }
   };
 
 
   return (
-    <div ref={reportRef} className="space-y-6">
+    <div ref={reportRef} className="space-y-6 pdf-content p-6 max-w-full overflow-hidden">
       {/* Official Report Header */}
       <div className="text-center border-b-2 border-blue-900 pb-4">
         <h2 className="text-2xl font-bold text-blue-900">IALIBU SECONDARY SCHOOL</h2>
@@ -3608,45 +3663,52 @@ function StudentReportForm({
         {/* Student Information Section */}
         <div className="bg-blue-50 p-6 rounded-lg border">
           <h3 className="font-bold text-blue-900 mb-4">Student Information</h3>
-          <div className="grid grid-cols-2 gap-6">
-            <div className="flex items-center gap-2">
-              <Label className="font-medium min-w-[80px]">Name:</Label>
-              <div className="flex-1 border-b border-gray-400 pb-1 font-medium">
-                {student.name}
+          <div className="space-y-4">
+            <div className="space-y-3">
+              <div className="flex flex-wrap gap-4">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <Label className="font-medium w-16 flex-shrink-0 text-sm">Name:</Label>
+                  <div className="flex-1 border-b border-gray-400 pb-1 font-medium min-h-[20px] overflow-hidden text-ellipsis whitespace-nowrap" title={student.name}>
+                    {student.name}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <Label className="font-medium w-16 flex-shrink-0 text-sm">Gender:</Label>
+                  <div className="flex-1 border-b border-gray-400 pb-1 min-h-[20px] overflow-hidden text-ellipsis">
+                    <span className="text-sm">{formData.gender || ''}</span>
+                    <Select
+                      value={formData.gender || ''}
+                      onValueChange={(value) => setFormData(prev => ({ ...prev, gender: value }))}
+                    >
+                      <SelectTrigger className="border-0 p-0 h-auto bg-transparent opacity-0 absolute">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Male">Male</SelectItem>
+                        <SelectItem value="Female">Female</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Label className="font-medium min-w-[80px]">Gender:</Label>
-              <div className="flex-1 border-b border-gray-400 pb-1">
-                <Select
-                  value={formData.gender || ''}
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, gender: value }))}
-                >
-                  <SelectTrigger className="border-0 p-0 h-auto">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Male">Male</SelectItem>
-                    <SelectItem value="Female">Female</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Label className="font-medium min-w-[80px]">Class:</Label>
-              <div className="flex-1 border-b border-gray-400 pb-1 font-medium">
-                {student.grade} {student.class}
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Label className="font-medium min-w-[100px]">Student ID:</Label>
-              <div className="flex-1 border-b border-gray-400 pb-1">
-                <Input
-                  value={formData.studentID || ''}
-                  onChange={(e) => setFormData(prev => ({ ...prev, studentID: e.target.value }))}
-                  className="border-0 p-0 h-auto"
-                  placeholder="ISS2024001"
-                />
+              <div className="flex flex-wrap gap-4">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <Label className="font-medium w-16 flex-shrink-0 text-sm">Class:</Label>
+                  <div className="flex-1 border-b border-gray-400 pb-1 font-medium min-h-[20px] overflow-hidden text-ellipsis whitespace-nowrap" title={`${student.grade} ${student.class}`}>
+                    {student.grade} {student.class}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 min-w-0 flex-1">
+                  <Label className="font-medium w-20 flex-shrink-0 text-sm">Student ID:</Label>
+                  <div className="flex-1 border-b border-gray-400 pb-1 min-h-[20px] overflow-hidden">
+                    <Input
+                      value={formData.studentID || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, studentID: e.target.value }))}
+                      className="border-0 p-0 h-auto bg-transparent text-sm w-full overflow-hidden text-ellipsis"
+                      placeholder="ISS2024001"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -3694,38 +3756,42 @@ function StudentReportForm({
         </div>
 
         {/* Academic Year and Term */}
-        <div className="grid grid-cols-2 gap-6">
-          <div className="flex items-center gap-2">
-            <Label className="font-medium min-w-[120px]">Academic Year:</Label>
-            <div className="flex-1 border-b border-gray-400 pb-1">
-              <Input
-                value={formData.academicYear || ''}
-                onChange={(e) => setFormData(prev => ({ ...prev, academicYear: e.target.value }))}
-                className="border-0 p-0 h-auto"
-                placeholder="2024"
-              />
+        <div className="bg-gray-50 p-4 rounded-lg border">
+          <h4 className="font-bold mb-3">Academic Period</h4>
+          <div className="flex flex-wrap gap-4">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <Label className="font-medium w-24 flex-shrink-0 text-sm">Academic Year:</Label>
+              <div className="flex-1 border-b border-gray-400 pb-1 min-h-[20px] overflow-hidden max-w-[120px]">
+                <Input
+                  value={formData.academicYear || ''}
+                  onChange={(e) => setFormData(prev => ({ ...prev, academicYear: e.target.value }))}
+                  className="border-0 p-0 h-auto bg-transparent text-sm w-full overflow-hidden text-ellipsis"
+                  placeholder="2024"
+                />
+              </div>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Label className="font-medium min-w-[80px]">Term:</Label>
-            <div className="flex-1 border-b border-gray-400 pb-1">
-              <Select
-                value={formData.term || ''}
-                onValueChange={(value) => {
-                  setFormData(prev => ({ ...prev, term: value }));
-                  recalculateAttendance();
-                }}
-              >
-                <SelectTrigger className="border-0 p-0 h-auto">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Term 1">Term 1</SelectItem>
-                  <SelectItem value="Term 2">Term 2</SelectItem>
-                  <SelectItem value="Term 3">Term 3</SelectItem>
-                  <SelectItem value="Term 4">Term 4</SelectItem>
-                </SelectContent>
-              </Select>
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              <Label className="font-medium w-12 flex-shrink-0 text-sm">Term:</Label>
+              <div className="flex-1 border-b border-gray-400 pb-1 min-h-[20px] overflow-hidden max-w-[100px]">
+                <span className="text-sm">{formData.term || ''}</span>
+                <Select
+                  value={formData.term || ''}
+                  onValueChange={(value) => {
+                    setFormData(prev => ({ ...prev, term: value }));
+                    recalculateAttendance();
+                  }}
+                >
+                  <SelectTrigger className="border-0 p-0 h-auto bg-transparent opacity-0 absolute">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Term 1">Term 1</SelectItem>
+                    <SelectItem value="Term 2">Term 2</SelectItem>
+                    <SelectItem value="Term 3">Term 3</SelectItem>
+                    <SelectItem value="Term 4">Term 4</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
         </div>
@@ -3843,49 +3909,52 @@ function StudentReportForm({
           />
 
           {/* Signature Section */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-6 border-t pt-6">
-            <div className="text-center">
-              <Input
-                placeholder="Class Teacher Signature"
-                value={formData.classTeacherSignature || ''}
-                onChange={(e) => setFormData(prev => ({ ...prev, classTeacherSignature: e.target.value }))}
-                className="mb-2"
-              />
-              <div className="border-t border-gray-400 pt-2">
-                <Label className="text-sm font-medium">Class Teacher Signature</Label>
+          <div className="mt-8 pt-6 border-t-2 border-gray-300 page-break-inside-avoid">
+            <h5 className="font-bold mb-6 text-center">Official Signatures</h5>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 page-break-inside-avoid">
+              <div className="text-center space-y-3 page-break-inside-avoid">
+                <div className="h-16 border-b-2 border-gray-400 flex items-end justify-center pb-2 overflow-hidden">
+                  <Input
+                    placeholder="Class Teacher Signature"
+                    value={formData.classTeacherSignature || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, classTeacherSignature: e.target.value }))}
+                    className="border-0 text-center bg-transparent text-xs w-full overflow-hidden text-ellipsis"
+                  />
+                </div>
+                <Label className="text-xs font-medium block">Class Teacher Signature</Label>
               </div>
-            </div>
-            <div className="text-center">
-              <Input
-                placeholder="Principal Signature"
-                value={formData.principalSignature || ''}
-                onChange={(e) => setFormData(prev => ({ ...prev, principalSignature: e.target.value }))}
-                className="mb-2"
-              />
-              <div className="border-t border-gray-400 pt-2">
-                <Label className="text-sm font-medium">Principal Signature</Label>
+              <div className="text-center space-y-3 page-break-inside-avoid">
+                <div className="h-16 border-b-2 border-gray-400 flex items-end justify-center pb-2 overflow-hidden">
+                  <Input
+                    placeholder="Principal Signature"
+                    value={formData.principalSignature || ''}
+                    onChange={(e) => setFormData(prev => ({ ...prev, principalSignature: e.target.value }))}
+                    className="border-0 text-center bg-transparent text-xs w-full overflow-hidden text-ellipsis"
+                  />
+                </div>
+                <Label className="text-xs font-medium block">Principal Signature</Label>
               </div>
-            </div>
-            <div className="text-center">
-              <div className="flex items-center justify-center mb-2">
-                <input
-                  type="checkbox"
-                  id="schoolStamp"
-                  checked={formData.schoolStamp || false}
-                  onChange={(e) => setFormData(prev => ({ ...prev, schoolStamp: e.target.checked }))}
-                  className="mr-2"
-                />
-                <Label htmlFor="schoolStamp">School Stamp Applied</Label>
-              </div>
-              <div className="border-t border-gray-400 pt-2">
-                <Label className="text-sm font-medium">School Stamp Section</Label>
+              <div className="text-center space-y-3 page-break-inside-avoid">
+                <div className="h-16 border-2 border-gray-400 rounded flex items-center justify-center overflow-hidden">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="schoolStamp"
+                      checked={formData.schoolStamp || false}
+                      onChange={(e) => setFormData(prev => ({ ...prev, schoolStamp: e.target.checked }))}
+                      className="scale-110"
+                    />
+                    <span className="text-xs font-medium">Applied</span>
+                  </div>
+                </div>
+                <Label className="text-xs font-medium block">School Stamp</Label>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Action Buttons */}
-        <div className="border-t pt-6">
+        {/* Action Buttons - Hidden during PDF generation */}
+        <div className="border-t pt-6 no-print">
           <div className="flex flex-col gap-4">
             {/* Email, Download, Print Actions */}
             <div className="bg-gray-50 p-4 rounded-lg">
@@ -3918,10 +3987,10 @@ function StudentReportForm({
       </form>
 
       {/* PNG Grading Scale and Weighing Categories - Separate Page */}
-      <div className="mt-12 border-t-4 border-blue-900 pt-8 print:page-break-before-always">
-        <div className="text-center border-b-2 border-blue-900 pb-4 mb-8">
-          <h2 className="text-2xl font-bold text-blue-900">IALIBU SECONDARY SCHOOL</h2>
-          <h3 className="text-lg font-semibold text-blue-800">GRADING SCALE & ASSESSMENT CRITERIA</h3>
+      <div className="mt-12 border-t-4 border-blue-900 pt-8 pb-8 print:page-break-before-always page-break-inside-avoid">
+        <div className="text-center border-b-2 border-blue-900 pb-4 mb-6">
+          <h2 className="text-xl font-bold text-blue-900">IALIBU SECONDARY SCHOOL</h2>
+          <h3 className="text-base font-semibold text-blue-800">GRADING SCALE & ASSESSMENT CRITERIA</h3>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
