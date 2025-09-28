@@ -64,6 +64,21 @@ const addPDFStyles = () => {
     .page-break-inside-avoid {
       page-break-inside: avoid;
     }
+    .page-break-after {
+      page-break-after: always;
+      break-after: page;
+    }
+    .page-break-before {
+      page-break-before: always;
+      break-before: page;
+    }
+    .pdf-page {
+      min-height: 297mm;
+      page-break-after: always;
+    }
+    .pdf-page:last-child {
+      page-break-after: auto;
+    }
   `;
   document.head.appendChild(style);
   return style;
@@ -3832,8 +3847,8 @@ function StudentReportForm({
           </div>
         </div>
 
-        {/* Academic Performance */}
-        <div className="bg-blue-50 p-4 rounded-lg">
+        {/* Academic Performance - End of Page 1 */}
+        <div className="bg-blue-50 p-4 rounded-lg page-break-after">
           <h4 className="font-bold text-blue-900 mb-3">Academic Performance</h4>
           <div className="flex items-center gap-2">
             <Label className="font-medium">GPA:</Label>
@@ -3843,8 +3858,8 @@ function StudentReportForm({
           </div>
         </div>
 
-        {/* Attendance Record */}
-        <div className="bg-green-50 p-4 rounded-lg">
+        {/* Attendance Record - Start of Page 2 */}
+        <div className="bg-green-50 p-4 rounded-lg page-break-before">
           <h4 className="font-bold text-green-900 mb-3">Attendance Record</h4>
           <div className="bg-green-50 p-4 rounded-lg border border-green-200 space-y-3">
             <div className="flex items-center gap-2 text-green-800 mb-2">
@@ -3908,8 +3923,8 @@ function StudentReportForm({
             className="mb-6"
           />
 
-          {/* Signature Section */}
-          <div className="mt-8 pt-6 border-t-2 border-gray-300 page-break-inside-avoid">
+          {/* Signature Section - End of Page 2 */}
+          <div className="mt-8 pt-6 border-t-2 border-gray-300 page-break-inside-avoid page-break-after">
             <h5 className="font-bold mb-6 text-center">Official Signatures</h5>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 page-break-inside-avoid">
               <div className="text-center space-y-3 page-break-inside-avoid">
@@ -3986,8 +4001,8 @@ function StudentReportForm({
         </div>
       </form>
 
-      {/* PNG Grading Scale and Weighing Categories - Separate Page */}
-      <div className="mt-12 border-t-4 border-blue-900 pt-8 pb-8 print:page-break-before-always page-break-inside-avoid">
+      {/* PNG Grading Scale and Weighing Categories - Page 3 */}
+      <div className="mt-12 border-t-4 border-blue-900 pt-8 pb-8 page-break-before page-break-inside-avoid">
         <div className="text-center border-b-2 border-blue-900 pb-4 mb-6">
           <h2 className="text-xl font-bold text-blue-900">IALIBU SECONDARY SCHOOL</h2>
           <h3 className="text-base font-semibold text-blue-800">GRADING SCALE & ASSESSMENT CRITERIA</h3>
